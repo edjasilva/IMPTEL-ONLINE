@@ -1,0 +1,36 @@
+service creation:
+
+1) Install dependencies:
+dotnet add package Microsoft.EntityFrameworkCore --version 8.0.10
+dotnet add package Npgsql.EntityFrameworkCore.PostgreSQL --version 8.0.10
+dotnet add package Microsoft.Extensions.Caching.StackExchangeRedis
+
+2) Add environment variables: 
+dotnet user-secrets init
+dotnet user-secrets set "DB_USER" "database.imptel"
+dotnet user-secrets set "DB_PASSWORD" "Imp7e1_db"
+dotnet user-secrets set "DB_HOST" "localhost"
+dotnet user-secrets set "DB_PORT" "7001"
+dotnet user-secrets set "DB_NAME" "database.imptel"
+
+dotnet user-secrets set "REDIS_HOST" "localhost"
+dotnet user-secrets set "REDIS_PORT" "7012"
+dotnet user-secrets set "REDIS_PASSWORD" "Imp7e1_db_session"
+
+3) Configure Json serialization
+
+4) Configure Data Source connection
+
+5) Configure CORS
+
+5) Create EntityModel (/models)
+
+6) Create Controllers (/controllers)
+
+7) Set Database Connection (appsettings.json)
+
+8) Clean the code (remove FIXME, TODO, etc)
+
+9) Set ping route ("/ping")
+
+

@@ -1,0 +1,227 @@
+# sudo chown -R 1001:1001 ./sql
+# sudo chmod -R 755 ./sql
+# dos2unix ./redis/10-initial.sh
+
+
+services:
+  primary-database:
+    image: bitnami/postgresql:latest
+    restart: always
+    ports:
+      - 7001:5432
+    networks:
+      - inner-link
+    environment:
+      POSTGRES_USER: database.imptel
+      POSTGRES_PASSWORD: Imp7e1_db
+      POSTGRES_DATABASE: database.imptel
+      PGDATA: /bitnami/postgresql/data
+      POSTGRES_REPLICATION_MODE: master
+      POSTGRES_REPLICATION_USER: db_replicator
+      POSTGRES_REPLICATION_PASSWORD: Imp7e1_db_replicator
+    volumes:
+      - database-data:/bitnami/postgresql
+      - ./sql:/docker-entrypoint-initdb.d
+
+  replica-database:
+    image: bitnami/postgresql:latest
+    restart: always
+    ports:
+      - 7002:5432
+    networks:
+      - inner-link
+    environment:
+      POSTGRES_USER: database.imptel
+      POSTGRES_PASSWORD: Imp7e1_db
+      POSTGRES_DATABASE: database.imptel
+      PGDATA: /bitnami/postgresql/data
+      POSTGRES_REPLICATION_MODE: slave
+      POSTGRES_MASTER_HOST: primary-database
+      POSTGRES_MASTER_PORT: 5432
+      POSTGRES_REPLICATION_USER: db_replicator
+      POSTGRES_REPLICATION_PASSWORD: Imp7e1_db_replicator
+    depends_on:
+      - primary-database
+    volumes:
+      - database-replica-data:/bitnami/postgresql
+
+  manager-database:
+    image: bitnami/pgpool:latest
+    restart: always
+    ports:
+      - "7000:5432"
+      - "8000:9898"
+    networks:
+      - inner-link
+    environment:
+      - PGPOOL_BACKEND_NODES=0:primary-database:5432,1:replica-database:5432
+      - PGPOOL_SR_CHECK_USER=db_replicator
+      - PGPOOL_SR_CHECK_PASSWORD=Imp7e1_db_replicator
+      - PGPOOL_SR_CHECK_DATABASE=database.imptel
+      - PGPOOL_POSTGRES_USERNAME=database.imptel
+      - PGPOOL_POSTGRES_PASSWORD=Imp7e1_db
+      - PGPOOL_ADMIN_USERNAME=database.imptel.admin
+      - PGPOOL_ADMIN_PASSWORD=Imp7e1_db_admin
+      - PGPOOL_ENABLE_LOG_PER_NODE_STATEMENT=yes
+      - PGPOOL_ENABLE_LOAD_BALANCING=yes
+      - PGPOOL_NUM_INIT_CHILDREN=32
+      - PGPOOL_MAX_POOL=4
+      - PGPOOL_FAILOVER_ON_BACKEND_SHUTDOWN=yes
+      - PGPOOL_HEALTH_CHECK_PERIOD=10
+      - PGPOOL_HEALTH_CHECK_TIMEOUT=5
+      - PGPOOL_HEALTH_CHECK_MAX_RETRIES=3
+      - PGPOOL_LB_POLICY=roundrobin
+      - PGPOOL_USER_CONF_FILE=/config/pgpool.conf
+    depends_on:
+      - primary-database
+      - replica-database
+    volumes:
+      - ./pgpool/pgpool.conf:/config/pgpool.conf
+      - ./pgpool/temp.conf:/opt/bitnami/pgpool/conf/pgpool.conf
+
+  
+  session-database:
+    image: redis:alpine3.19
+    restart: always
+    ports:
+      - 7012:6379
+    networks:
+      - inner-link
+    command: ["sh", "-c", "redis-server /etc/redis/redis.conf --save 20 1 --loglevel warning --daemonize yes && /docker-entrypoint-initdb.d/10-initial.sh && tail -f /dev/null"]
+    volumes:
+      - session-data:/data
+      - ./redis:/docker-entrypoint-initdb.d
+      - ./redis/redis.conf:/etc/redis/redis.conf
+
+
+  account-service:
+    image: account-service:1.0
+    restart: always
+    networks:
+      - inner-link
+    environment:
+      DB_USER: database.imptel
+      DB_PASSWORD: Imp7e1_db
+      DB_HOST: manager-database
+      DB_PORT: 5432
+      DB_NAME: database.imptel
+      # --
+      DB_READONLY_USER: database.imptel
+      DB_READONLY_PASSWORD: Imp7e1_db
+      DB_READONLY_HOST: replica-database
+      DB_READONLY_PORT: 5432
+      DB_READONLY_NAME: database.imptel
+      # --
+      REDIS_HOST: session-database
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: Imp7e1_db_session
+    depends_on:
+      - session-database
+      - primary-database
+    deploy:
+      replicas: 2
+
+
+  registry-service:
+    image: registry-service:1.0
+    restart: always
+    networks:
+      - inner-link
+    environment:
+      DB_USER: database.imptel
+      DB_PASSWORD: Imp7e1_db
+      DB_HOST: manager-database
+      DB_PORT: 5432
+      DB_NAME: database.imptel
+      # --
+      DB_READONLY_USER: database.imptel
+      DB_READONLY_PASSWORD: Imp7e1_db
+      DB_READONLY_HOST: replica-database
+      DB_READONLY_PORT: 5432
+      DB_READONLY_NAME: database.imptel
+      # --
+      REDIS_HOST: session-database
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: Imp7e1_db_session
+    depends_on:
+      - session-database
+      - primary-database
+    deploy:
+      replicas: 2
+      
+  
+  auxiliar-service:
+    image: auxiliar-service:1.0
+    restart: always
+    networks:
+      - inner-link
+    environment:
+      DB_USER: database.imptel
+      DB_PASSWORD: Imp7e1_db
+      DB_HOST: manager-database
+      DB_PORT: 5432
+      DB_NAME: database.imptel
+      # --
+      DB_READONLY_USER: database.imptel
+      DB_READONLY_PASSWORD: Imp7e1_db
+      DB_READONLY_HOST: replica-database
+      DB_READONLY_PORT: 5432
+      DB_READONLY_NAME: database.imptel
+      # --
+      REDIS_HOST: session-database
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: Imp7e1_db_session
+    depends_on:
+      - session-database
+      - primary-database
+    deploy:
+      replicas: 2
+    
+
+  app-service:
+    image: app-service:1.0
+    restart: always
+    networks:
+      - inner-link
+    depends_on:
+      - account-service
+      - registry-service
+      - auxiliar-service
+    deploy:
+      replicas: 2
+
+  # umbraco-service:
+  #   image: umbraco-service:1.0
+  #   restart: always
+  #   networks:
+  #     - inner-link
+  #   deploy:
+  #     replicas: 2
+
+
+  nginx-service:
+    image: nginx-service:1.0
+    ports:
+      - 80:80
+    networks:
+      - inner-link
+    depends_on:
+      - account-service
+      - registry-service
+      - auxiliar-service
+      - app-service
+    
+    
+
+volumes:
+  database-data:
+    name: database-data
+  database-replica-data:
+    name: database-replica-data
+  session-data:
+    name: session-data
+
+
+networks:
+  inner-link:
+    name: inner-link
